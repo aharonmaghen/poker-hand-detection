@@ -39,9 +39,65 @@ The code for doing inference and plotting the results is available in the [Poker
 
 ### `detect_cards.py` script
 
-The required code for detecting cards in an image and converting the detected cards into a human-readable format is available in the `detect_cards.py` script.
+The required code for detecting cards in an image or from scrcpy windows and converting the detected cards into a human-readable format is available in the `detect_cards.py` script.
 
 #### Usage
+
+##### Scrcpy Mode (Default)
+
+Detect cards from scrcpy windows in real-time (Android device screens):
+
+```bash
+python detect_cards.py
+```
+
+The script will:
+- Check for running scrcpy windows on macOS
+- Continuously capture video streams from each scrcpy window
+- Detect cards in real-time using parallel threading
+- Update results to `cards_detected/phone0.txt`, `phone1.txt`, etc.
+- Run until stopped with Ctrl+C
+
+**Requirements:**
+- scrcpy installed and running with at least one device connected
+- Windows must be visible on screen
+- macOS (uses Quartz API for window capture)
+
+**Example Output:**
+```
+Checking for scrcpy windows...
+✓ Found 3 scrcpy window(s)
+
+Starting real-time card detection...
+Processing video streams from scrcpy windows...
+Press Ctrl+C to stop.
+
+  → Started stream processing for window 1: scrcpy
+  → Started stream processing for window 2: scrcpy (Galaxy S21)
+  → Started stream processing for window 3: scrcpy (Pixel 7)
+    ✓ Window 1: 2 card(s) - 3C, 7H
+    → Window 2: No cards detected
+    ✓ Window 3: 5 card(s) - AH, KH, QH, JH, 10H
+    ...
+    (continues until Ctrl+C)
+    
+^C
+Stopping card detection...
+✓ All streams stopped
+Results saved to 'cards_detected/' directory
+```
+
+**Note:** The script processes each scrcpy window in a separate thread, so multiple devices can be monitored simultaneously. Results are only written to files when detected cards change.
+
+##### Image Mode (Legacy)
+
+Detect cards from static images:
+
+```bash
+python detect_cards.py test
+```
+
+Or use in code:
 
 ```py
 from detect_cards import detect_cards
