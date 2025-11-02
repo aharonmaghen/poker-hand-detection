@@ -387,12 +387,19 @@ def _capture_window_screenshot_windows(window_info):
             if result == 1:
                 bmpinfo = bitmap.GetInfo()
                 bmpstr = bitmap.GetBitmapBits(True)
-                # Windows bitmap is in BGRA format, convert to RGB
-                img = Image.frombuffer(
-                    'RGB',
-                    (bmpinfo['bmWidth'], bmpinfo['bmHeight']),
-                    bmpstr, 'raw', 'BGRA', 0, 1
-                )
+                
+                # Windows bitmap is in BGRA format, convert to RGB using numpy
+                width = bmpinfo['bmWidth']
+                height = bmpinfo['bmHeight']
+                
+                # Convert bytes to numpy array (BGRA format, stored bottom-to-top)
+                img_array = np.frombuffer(bmpstr, dtype=np.uint8).reshape((height, width, 4))
+                
+                # Flip vertically (Windows bitmaps are stored bottom-to-top)
+                img_array = np.flipud(img_array)
+                
+                # Convert BGRA to RGB by extracting B, G, R channels (discard alpha)
+                img_rgb = img_array[:, :, [2, 1, 0]]
                 
                 # Clean up
                 win32gui.DeleteObject(bitmap.GetHandle())
@@ -400,7 +407,7 @@ def _capture_window_screenshot_windows(window_info):
                 mfcDC.DeleteDC()
                 win32gui.ReleaseDC(window_id, hwndDC)
                 
-                return np.array(img)
+                return img_rgb
             else:
                 # Clean up on failure
                 win32gui.DeleteObject(bitmap.GetHandle())
