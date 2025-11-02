@@ -1,6 +1,6 @@
 from ultralytics import YOLO
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageCms
 
 def detect_cards(image_path_or_array, weights_path, conf=0.5):
     '''
@@ -50,6 +50,7 @@ def decode_cards(cards):
     '''
     
     card_names = {
+        'AC': 'Ace of Clubs',
         '2C': '2 of Clubs',
         '3C': '3 of Clubs',
         '4C': '4 of Clubs',
@@ -62,6 +63,7 @@ def decode_cards(cards):
         'JC': 'Jack of Clubs',
         'QC': 'Queen of Clubs',
         'KC': 'King of Clubs',
+        'AD': 'Ace of Diamonds',
         '2D': '2 of Diamonds',
         '3D': '3 of Diamonds',
         '4D': '4 of Diamonds',
@@ -74,6 +76,7 @@ def decode_cards(cards):
         'JD': 'Jack of Diamonds',
         'QD': 'Queen of Diamonds',
         'KD': 'King of Diamonds',
+        'AH': 'Ace of Hearts',
         '2H': '2 of Hearts',
         '3H': '3 of Hearts',
         '4H': '4 of Hearts',
@@ -86,6 +89,7 @@ def decode_cards(cards):
         'JH': 'Jack of Hearts',
         'QH': 'Queen of Hearts',
         'KH': 'King of Hearts',
+        'AS': 'Ace of Spades',
         '2S': '2 of Spades',
         '3S': '3 of Spades',
         '4S': '4 of Spades',
@@ -171,6 +175,15 @@ def capture_window_screenshot(window_info):
         
         # Read PNG data into PIL Image
         img = Image.open(io.BytesIO(data))
+        
+        # Convert color space if ICC profile exists (before mode conversion)
+        if 'icc_profile' in img.info:
+            try:
+                # Convert from embedded ICC profile to sRGB
+                img = ImageCms.profileToProfile(img, ImageCms.ImageCmsProfile(io.BytesIO(img.info['icc_profile'])), ImageCms.createProfile('sRGB'))
+            except Exception as cms_error:
+                # If color space conversion fails, continue without it
+                print(f"Warning: ICC profile conversion failed: {cms_error}")
         
         # Convert to RGB if needed
         if img.mode != 'RGB':
