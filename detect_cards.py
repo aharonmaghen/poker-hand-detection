@@ -1,6 +1,7 @@
 from ultralytics import YOLO
 import numpy as np
 from PIL import Image
+import platform
 
 def detect_cards(image_path_or_array, weights_path, conf=0.5):
     '''
@@ -104,82 +105,383 @@ def decode_cards(cards):
 
 def find_scrcpy_windows():
     '''
-    Finds all scrcpy windows on macOS using Quartz API.
+    Finds all scrcpy windows across different platforms (Windows, macOS, Linux).
     
     Returns:
         list: List of dictionaries containing window information with title, bounds, etc.
     '''
-    from Quartz import CGWindowListCopyWindowInfo, kCGWindowListOptionOnScreenOnly, kCGNullWindowID
+    system = platform.system()
     
-    window_list = CGWindowListCopyWindowInfo(kCGWindowListOptionOnScreenOnly, kCGNullWindowID)
-    
-    # Filter for scrcpy windows
-    scrcpy_windows = []
-    for window in window_list:
-        owner = window.get('kCGWindowOwnerName', '')
-        title = window.get('kCGWindowName', '')
+    if system == 'Darwin':  # macOS
+        return _find_scrcpy_windows_macos()
+    elif system == 'Windows':
+        return _find_scrcpy_windows_windows()
+    elif system == 'Linux':
+        return _find_scrcpy_windows_linux()
+    else:
+        raise NotImplementedError(f"Unsupported platform: {system}")
+
+
+def _find_scrcpy_windows_macos():
+    '''macOS implementation using Quartz API.'''
+    try:
+        from Quartz import CGWindowListCopyWindowInfo, kCGWindowListOptionOnScreenOnly, kCGNullWindowID
         
-        # Look for windows with 'scrcpy' in the owner or title
-        if 'scrcpy' in owner.lower():
-            scrcpy_windows.append(window)
-    
-    return scrcpy_windows
+        window_list = CGWindowListCopyWindowInfo(kCGWindowListOptionOnScreenOnly, kCGNullWindowID)
+        
+        # Filter for scrcpy windows
+        scrcpy_windows = []
+        for window in window_list:
+            owner = window.get('kCGWindowOwnerName', '')
+            title = window.get('kCGWindowName', '')
+            
+            # Look for windows with 'scrcpy' in the owner or title
+            if 'scrcpy' in owner.lower() or 'scrcpy' in title.lower():
+                # Normalize window info to match expected format
+                bounds = window.get('kCGWindowBounds', {})
+                scrcpy_windows.append({
+                    'title': title,
+                    'owner': owner,
+                    'window_id': window.get('kCGWindowNumber', 0),
+                    'bounds': {
+                        'X': bounds.get('X', 0),
+                        'Y': bounds.get('Y', 0),
+                        'Width': bounds.get('Width', 0),
+                        'Height': bounds.get('Height', 0)
+                    },
+                    '_platform': 'macos',
+                    '_raw_info': window  # Keep raw info for screenshot
+                })
+        
+        return scrcpy_windows
+    except ImportError:
+        raise ImportError("PyObjC (Quartz) is required on macOS. Install with: pip install pyobjc-framework-Quartz")
+
+
+def _find_scrcpy_windows_windows():
+    '''Windows implementation using pywin32.'''
+    try:
+        import win32gui
+        import win32con
+        
+        scrcpy_windows = []
+        
+        def enum_handler(hwnd, ctx):
+            if win32gui.IsWindowVisible(hwnd):
+                window_text = win32gui.GetWindowText(hwnd)
+                class_name = win32gui.GetClassName(hwnd)
+                
+                # Look for scrcpy windows
+                if 'scrcpy' in window_text.lower() or 'scrcpy' in class_name.lower():
+                    # Get window rectangle
+                    rect = win32gui.GetWindowRect(hwnd)
+                    left, top, right, bottom = rect
+                    
+                    scrcpy_windows.append({
+                        'title': window_text,
+                        'owner': class_name,
+                        'window_id': hwnd,
+                        'bounds': {
+                            'X': left,
+                            'Y': top,
+                            'Width': right - left,
+                            'Height': bottom - top
+                        },
+                        '_platform': 'windows'
+                    })
+        
+        win32gui.EnumWindows(enum_handler, None)
+        return scrcpy_windows
+    except ImportError:
+        raise ImportError("pywin32 is required on Windows. Install with: pip install pywin32")
+
+
+def _find_scrcpy_windows_linux():
+    '''Linux implementation using Xlib or fallback method.'''
+    try:
+        from Xlib import display
+        from Xlib import X
+        
+        d = display.Display()
+        root = d.screen().root
+        
+        # Get all windows
+        windows = root.query_tree().children
+        
+        scrcpy_windows = []
+        
+        for window in windows:
+            try:
+                # Get window name
+                window_name = window.get_wm_name()
+                window_class = window.get_wm_class()
+                
+                if window_name and 'scrcpy' in window_name.lower():
+                    # Get window geometry
+                    geom = window.get_geometry()
+                    
+                    scrcpy_windows.append({
+                        'title': window_name,
+                        'owner': window_class[0] if window_class else '',
+                        'window_id': window.id,
+                        'bounds': {
+                            'X': geom.x,
+                            'Y': geom.y,
+                            'Width': geom.width,
+                            'Height': geom.height
+                        },
+                        '_platform': 'linux',
+                        '_raw_window': window  # Keep raw window for screenshot
+                    })
+            except:
+                continue
+        
+        return scrcpy_windows
+    except ImportError:
+        # Fallback: try using wmctrl if available, or return empty list
+        import subprocess
+        try:
+            result = subprocess.run(['wmctrl', '-l'], capture_output=True, text=True)
+            if result.returncode == 0:
+                scrcpy_windows = []
+                for line in result.stdout.split('\n'):
+                    if 'scrcpy' in line.lower():
+                        parts = line.split(None, 3)
+                        if len(parts) >= 4:
+                            scrcpy_windows.append({
+                                'title': parts[3],
+                                'owner': '',
+                                'window_id': parts[0],
+                                'bounds': {'X': 0, 'Y': 0, 'Width': 0, 'Height': 0},
+                                '_platform': 'linux'
+                            })
+                return scrcpy_windows
+        except:
+            pass
+        
+        raise ImportError("python-xlib is required on Linux. Install with: pip install python-xlib")
 
 
 def capture_window_screenshot(window_info):
     '''
-    Captures a screenshot of a specific window on macOS.
+    Captures a screenshot of a specific window across different platforms.
     
     Args:
-        window_info (dict): Window information dictionary from Quartz API.
+        window_info (dict): Window information dictionary from platform-specific API.
         
     Returns:
         np.ndarray or None: Image as numpy array, or None if capture failed.
     '''
-    from Quartz import CGWindowListCreateImage, CGRectMake, kCGWindowImageDefault, kCGWindowListOptionIncludingWindow
+    platform_type = window_info.get('_platform', platform.system().lower())
     
-    # Get window bounds
-    bounds = window_info.get('kCGWindowBounds', {})
-    x = int(bounds.get('X', 0))
-    y = int(bounds.get('Y', 0))
-    width = int(bounds.get('Width', 0))
-    height = int(bounds.get('Height', 0))
-    
-    if width == 0 or height == 0:
-        return None
-    
-    # Create window ID
-    window_id = window_info.get('kCGWindowNumber', 0)
-    
+    if platform_type == 'macos':
+        return _capture_window_screenshot_macos(window_info)
+    elif platform_type == 'windows':
+        return _capture_window_screenshot_windows(window_info)
+    elif platform_type == 'linux':
+        return _capture_window_screenshot_linux(window_info)
+    else:
+        raise NotImplementedError(f"Unsupported platform: {platform_type}")
+
+
+def _capture_window_screenshot_macos(window_info):
+    '''macOS implementation using Quartz API.'''
     try:
-        # Capture the window image
-        image_ref = CGWindowListCreateImage(
-            CGRectMake(x, y, width, height),
-            kCGWindowListOptionIncludingWindow,
-            window_id,
-            kCGWindowImageDefault
-        )
-        
-        if image_ref is None:
-            return None
-        
-        # Convert CGImageRef to numpy array using AppKit
+        from Quartz import CGWindowListCreateImage, CGRectMake, kCGWindowImageDefault, kCGWindowListOptionIncludingWindow
         import AppKit
         import io
-        bitmap = AppKit.NSBitmapImageRep.alloc().initWithCGImage_(image_ref)
-        data = bitmap.representationUsingType_properties_(AppKit.NSBitmapImageFileTypePNG, None)
         
-        # Read PNG data into PIL Image
-        img = Image.open(io.BytesIO(data))
+        # Get window bounds - use normalized format
+        bounds = window_info.get('bounds', {})
+        x = int(bounds.get('X', 0))
+        y = int(bounds.get('Y', 0))
+        width = int(bounds.get('Width', 0))
+        height = int(bounds.get('Height', 0))
         
-        # Convert to RGB if needed
-        if img.mode != 'RGB':
-            img = img.convert('RGB')
+        if width == 0 or height == 0:
+            return None
         
-        return np.array(img)
-    
+        # Create window ID
+        window_id = window_info.get('window_id', 0)
+        if window_id == 0:
+            # Fallback to raw_info if available
+            raw_info = window_info.get('_raw_info', {})
+            if raw_info:
+                window_id = raw_info.get('kCGWindowNumber', 0)
+                # Get bounds from raw_info if not in normalized format
+                if not bounds:
+                    raw_bounds = raw_info.get('kCGWindowBounds', {})
+                    x = int(raw_bounds.get('X', 0))
+                    y = int(raw_bounds.get('Y', 0))
+                    width = int(raw_bounds.get('Width', 0))
+                    height = int(raw_bounds.get('Height', 0))
+        
+        try:
+            # Capture the window image
+            image_ref = CGWindowListCreateImage(
+                CGRectMake(x, y, width, height),
+                kCGWindowListOptionIncludingWindow,
+                window_id,
+                kCGWindowImageDefault
+            )
+            
+            if image_ref is None:
+                return None
+            
+            # Convert CGImageRef to numpy array using AppKit
+            bitmap = AppKit.NSBitmapImageRep.alloc().initWithCGImage_(image_ref)
+            data = bitmap.representationUsingType_properties_(AppKit.NSBitmapImageFileTypePNG, None)
+            
+            # Read PNG data into PIL Image
+            img = Image.open(io.BytesIO(data))
+            
+            # Convert to RGB if needed
+            if img.mode != 'RGB':
+                img = img.convert('RGB')
+            
+            return np.array(img)
+        except Exception as e:
+            print(f"Error capturing window on macOS: {e}")
+            return None
+    except ImportError:
+        raise ImportError("PyObjC (Quartz, AppKit) is required on macOS. Install with: pip install pyobjc-framework-Quartz")
+
+
+def _capture_window_screenshot_windows(window_info):
+    '''Windows implementation using pywin32.'''
+    try:
+        import win32gui
+        import win32ui
+        import win32con
+        from ctypes import windll
+        
+        window_id = window_info.get('window_id', 0)
+        bounds = window_info.get('bounds', {})
+        
+        if window_id == 0:
+            return None
+        
+        # Get window rectangle
+        left, top, right, bottom = win32gui.GetWindowRect(window_id)
+        width = right - left
+        height = bottom - top
+        
+        if width == 0 or height == 0:
+            return None
+        
+        try:
+            # Create device context
+            hwndDC = win32gui.GetWindowDC(window_id)
+            mfcDC = win32ui.CreateDCFromHandle(hwndDC)
+            saveDC = mfcDC.CreateCompatibleDC()
+            
+            # Create bitmap
+            bitmap = win32ui.CreateBitmap()
+            bitmap.CreateCompatibleBitmap(mfcDC, width, height)
+            saveDC.SelectObject(bitmap)
+            
+            # Copy window content
+            result = windll.user32.PrintWindow(window_id, saveDC.GetSafeHdc(), 3)
+            
+            # Convert to PIL Image
+            if result == 1:
+                bmpinfo = bitmap.GetInfo()
+                bmpstr = bitmap.GetBitmapBits(True)
+                # Windows bitmap is in BGRA format, convert to RGB
+                img = Image.frombuffer(
+                    'RGB',
+                    (bmpinfo['bmWidth'], bmpinfo['bmHeight']),
+                    bmpstr, 'raw', 'BGRA', 0, 1
+                )
+                
+                # Clean up
+                win32gui.DeleteObject(bitmap.GetHandle())
+                saveDC.DeleteDC()
+                mfcDC.DeleteDC()
+                win32gui.ReleaseDC(window_id, hwndDC)
+                
+                return np.array(img)
+            else:
+                # Clean up on failure
+                win32gui.DeleteObject(bitmap.GetHandle())
+                saveDC.DeleteDC()
+                mfcDC.DeleteDC()
+                win32gui.ReleaseDC(window_id, hwndDC)
+                return None
+        except Exception as e:
+            print(f"Error capturing window on Windows: {e}")
+            return None
+    except ImportError:
+        raise ImportError("pywin32 is required on Windows. Install with: pip install pywin32")
+
+
+def _capture_window_screenshot_linux(window_info):
+    '''Linux implementation using Xlib or mss fallback.'''
+    try:
+        from Xlib import display
+        from Xlib import X
+        import io
+        
+        raw_window = window_info.get('_raw_window')
+        if raw_window is None:
+            # Fallback to mss if Xlib window not available
+            return _capture_window_screenshot_linux_mss(window_info)
+        
+        d = display.Display()
+        bounds = window_info.get('bounds', {})
+        
+        x = int(bounds.get('X', 0))
+        y = int(bounds.get('Y', 0))
+        width = int(bounds.get('Width', 0))
+        height = int(bounds.get('Height', 0))
+        
+        if width == 0 or height == 0:
+            return None
+        
+        try:
+            # Get window image using XGetImage
+            # Use 0,0 for offset since we want the window content from top-left
+            image = raw_window.get_image(0, 0, width, height, X.ZPixmap, 0xffffffff)
+            
+            # Convert Xlib image to PIL Image
+            img = Image.frombytes('RGB', (width, height), image.data, 'raw', 'BGRX')
+            
+            return np.array(img)
+        except Exception as e:
+            print(f"Error capturing window on Linux (Xlib): {e}")
+            return _capture_window_screenshot_linux_mss(window_info)
+    except ImportError:
+        # Fallback to mss
+        return _capture_window_screenshot_linux_mss(window_info)
+
+
+def _capture_window_screenshot_linux_mss(window_info):
+    '''Linux fallback implementation using mss (less accurate but works).'''
+    try:
+        import mss
+        
+        bounds = window_info.get('bounds', {})
+        x = int(bounds.get('X', 0))
+        y = int(bounds.get('Y', 0))
+        width = int(bounds.get('Width', 0))
+        height = int(bounds.get('Height', 0))
+        
+        if width == 0 or height == 0:
+            return None
+        
+        with mss.mss() as sct:
+            # Capture the region
+            monitor = {'top': y, 'left': x, 'width': width, 'height': height}
+            screenshot = sct.grab(monitor)
+            
+            # Convert to PIL Image
+            img = Image.frombytes('RGB', screenshot.size, screenshot.bgra, 'raw', 'BGRX')
+            
+            return np.array(img)
+    except ImportError:
+        raise ImportError("mss is required on Linux as fallback. Install with: pip install mss")
     except Exception as e:
-        print(f"Error capturing window: {e}")
+        print(f"Error capturing window on Linux (mss): {e}")
         return None
 
 
@@ -188,7 +490,7 @@ def process_stream(window_info, idx, weights_path, output_dir, stop_event):
     Continuously process video stream from a scrcpy window.
     
     Args:
-        window_info (dict): Window information dictionary from Quartz API.
+        window_info (dict): Window information dictionary from platform-specific API.
         idx (int): Window index.
         weights_path (str): Path to YOLO weights file.
         output_dir (str): Output directory for results.
@@ -198,7 +500,7 @@ def process_stream(window_info, idx, weights_path, output_dir, stop_event):
     import time
     from datetime import datetime
     
-    window_title = window_info.get('kCGWindowName', f'Window_{idx}')
+    window_title = window_info.get('title', window_info.get('kCGWindowName', f'Window_{idx}'))
     output_file = os.path.join(output_dir, f'phone{idx}.txt')
     
     print(f"  → Started stream processing for window {idx + 1}: {window_title[:50]}")

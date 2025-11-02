@@ -9,6 +9,39 @@ After identifying the cards on the table and in the player's hand, the `analyze_
 
 Watch this [video](https://youtu.be/aeLQXDwPjYo?si=BlhuaHtsBg0fbuWP) on YouTube for a visual demonstration of the project.
 
+## Installation
+
+### Prerequisites
+- Python 3.7 or higher
+- scrcpy installed and configured ([installation guide](https://github.com/Genymobile/scrcpy))
+- At least one Android device connected via USB
+
+### Install Dependencies
+
+1. Install core dependencies:
+```bash
+pip install -r requirements.txt
+```
+
+2. Install platform-specific dependencies based on your OS:
+
+**Windows:**
+```bash
+pip install pywin32
+```
+
+**macOS:**
+```bash
+pip install pyobjc-framework-Quartz
+```
+
+**Linux:**
+```bash
+pip install python-xlib mss
+```
+
+Alternatively, the script will provide helpful error messages with installation instructions if platform-specific dependencies are missing.
+
 ## 1. Poker Hand Detection using YOLO11
 
 
@@ -52,7 +85,7 @@ python detect_cards.py
 ```
 
 The script will:
-- Check for running scrcpy windows on macOS
+- Check for running scrcpy windows (cross-platform: Windows, macOS, Linux)
 - Continuously capture video streams from each scrcpy window
 - Detect cards in real-time using parallel threading
 - Update results to `cards_detected/phone0.txt`, `phone1.txt`, etc.
@@ -61,7 +94,12 @@ The script will:
 **Requirements:**
 - scrcpy installed and running with at least one device connected
 - Windows must be visible on screen
-- macOS (uses Quartz API for window capture)
+- Python 3.7+ with required dependencies (see Installation below)
+
+**Platform Support:**
+- **Windows**: Uses pywin32 for window detection and capture
+- **macOS**: Uses Quartz/AppKit (PyObjC) for window detection and capture
+- **Linux**: Uses python-xlib (with mss fallback) for window detection and capture
 
 **Example Output:**
 ```

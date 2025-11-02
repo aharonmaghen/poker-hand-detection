@@ -1,0 +1,18 @@
+# Core dependencies (required for all platforms)
+ultralytics>=8.0.0
+numpy>=1.21.0
+Pillow>=9.0.0
+
+# Platform-specific dependencies
+# These will be installed automatically based on the platform
+
+# macOS dependencies (optional - install manually if needed)
+# pyobjc-framework-Quartz>=9.0.0
+
+# Windows dependencies (optional - install manually if needed)
+# pywin32>=300; sys_platform == 'win32'
+
+# Linux dependencies (optional - install manually if needed)
+# python-xlib>=0.33; sys_platform == 'linux'
+# mss>=6.0.0; sys_platform == 'linux'
+
