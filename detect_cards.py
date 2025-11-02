@@ -171,12 +171,32 @@ def _find_scrcpy_windows_windows():
                 window_text = win32gui.GetWindowText(hwnd)
                 class_name = win32gui.GetClassName(hwnd)
                 
-                # Look for scrcpy windows
-                if 'scrcpy' in window_text.lower() or 'scrcpy' in class_name.lower():
-                    # Get window rectangle
+                # Get window rectangle to check size
+                try:
                     rect = win32gui.GetWindowRect(hwnd)
                     left, top, right, bottom = rect
-                    
+                    width = right - left
+                    height = bottom - top
+                except:
+                    return
+                
+                # Skip very small windows (likely not the main scrcpy window)
+                if width < 100 or height < 100:
+                    return
+                
+                # Look for scrcpy windows - check multiple criteria
+                window_text_lower = window_text.lower()
+                class_name_lower = class_name.lower()
+                
+                # Check for 'scrcpy' in title or class
+                # Also check for common scrcpy window class names
+                is_scrcpy = (
+                    'scrcpy' in window_text_lower or 
+                    'scrcpy' in class_name_lower or
+                    class_name_lower == 'wxwindowclassnr'  # Common scrcpy window class on Windows
+                )
+                
+                if is_scrcpy:
                     scrcpy_windows.append({
                         'title': window_text,
                         'owner': class_name,
@@ -184,8 +204,8 @@ def _find_scrcpy_windows_windows():
                         'bounds': {
                             'X': left,
                             'Y': top,
-                            'Width': right - left,
-                            'Height': bottom - top
+                            'Width': width,
+                            'Height': height
                         },
                         '_platform': 'windows'
                     })
