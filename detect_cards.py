@@ -364,12 +364,10 @@ def _capture_window_screenshot_macos(window_info):
 
 
 def _capture_window_screenshot_windows(window_info):
-    '''Windows implementation using pywin32.'''
+    '''Windows implementation using mss library - simpler and more reliable.'''
     try:
+        import mss
         import win32gui
-        import win32ui
-        import win32con
-        from ctypes import windll
         
         window_id = window_info.get('window_id', 0)
         bounds = window_info.get('bounds', {})
@@ -386,56 +384,27 @@ def _capture_window_screenshot_windows(window_info):
             return None
         
         try:
-            # Create device context
-            hwndDC = win32gui.GetWindowDC(window_id)
-            mfcDC = win32ui.CreateDCFromHandle(hwndDC)
-            saveDC = mfcDC.CreateCompatibleDC()
-            
-            # Create bitmap
-            bitmap = win32ui.CreateBitmap()
-            bitmap.CreateCompatibleBitmap(mfcDC, width, height)
-            saveDC.SelectObject(bitmap)
-            
-            # Copy window content
-            result = windll.user32.PrintWindow(window_id, saveDC.GetSafeHdc(), 3)
-            
-            # Convert to PIL Image
-            if result == 1:
-                bmpinfo = bitmap.GetInfo()
-                bmpstr = bitmap.GetBitmapBits(True)
+            # Use mss to capture the screen region
+            # mss handles all color conversion automatically
+            with mss.mss() as sct:
+                monitor = {
+                    "top": top,
+                    "left": left,
+                    "width": width,
+                    "height": height
+                }
+                screenshot = sct.grab(monitor)
                 
-                # Windows bitmap is in BGRA format, convert to RGB using numpy
-                width = bmpinfo['bmWidth']
-                height = bmpinfo['bmHeight']
+                # Convert to PIL Image (mss returns BGRA, PIL handles conversion)
+                img = Image.frombytes('RGB', screenshot.size, screenshot.bgra, 'raw', 'BGRX')
                 
-                # Convert bytes to numpy array (BGRA format, stored bottom-to-top)
-                img_array = np.frombuffer(bmpstr, dtype=np.uint8).reshape((height, width, 4))
-                
-                # Flip vertically (Windows bitmaps are stored bottom-to-top)
-                img_array = np.flipud(img_array)
-                
-                # Convert BGRA to RGB by extracting B, G, R channels (discard alpha)
-                img_rgb = img_array[:, :, [2, 1, 0]]
-                
-                # Clean up
-                win32gui.DeleteObject(bitmap.GetHandle())
-                saveDC.DeleteDC()
-                mfcDC.DeleteDC()
-                win32gui.ReleaseDC(window_id, hwndDC)
-                
-                return img_rgb
-            else:
-                # Clean up on failure
-                win32gui.DeleteObject(bitmap.GetHandle())
-                saveDC.DeleteDC()
-                mfcDC.DeleteDC()
-                win32gui.ReleaseDC(window_id, hwndDC)
-                return None
+                # Convert to numpy array
+                return np.array(img)
         except Exception as e:
             print(f"Error capturing window on Windows: {e}")
             return None
     except ImportError:
-        raise ImportError("pywin32 is required on Windows. Install with: pip install pywin32")
+        raise ImportError("mss is required on Windows. Install with: pip install mss")
 
 
 def _capture_window_screenshot_linux(window_info):
