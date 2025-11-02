@@ -171,7 +171,7 @@ def _find_scrcpy_windows_windows():
                 window_text = win32gui.GetWindowText(hwnd)
                 class_name = win32gui.GetClassName(hwnd)
                 
-                # Get window rectangle to check size
+                # Get window rectangle to get dimensions
                 try:
                     rect = win32gui.GetWindowRect(hwnd)
                     left, top, right, bottom = rect
@@ -180,23 +180,19 @@ def _find_scrcpy_windows_windows():
                 except:
                     return
                 
-                # Skip very small windows (likely not the main scrcpy window)
-                if width < 100 or height < 100:
-                    return
-                
-                # Look for scrcpy windows - check multiple criteria
+                # scrcpy windows typically have SDL_app class or device names in title
                 window_text_lower = window_text.lower()
-                class_name_lower = class_name.lower()
                 
-                # Check for 'scrcpy' in title or class
-                # Also check for common scrcpy window class names
+                # Exact logic from detect_cards_video.py lines 116-120
                 is_scrcpy = (
-                    'scrcpy' in window_text_lower or 
-                    'scrcpy' in class_name_lower or
-                    class_name_lower == 'wxwindowclassnr'  # Common scrcpy window class on Windows
+                    class_name == 'SDL_app' or  # scrcpy uses SDL
+                    'scrcpy' in window_text_lower or
+                    ('device' in window_text_lower or 'phone' in window_text_lower or 'android' in window_text_lower)
                 )
                 
-                if is_scrcpy:
+                # Exact logic from detect_cards_video.py line 122 (excluding Hebrew as requested)
+                # Exclude CMD and File Explorer
+                if is_scrcpy and 'cmd.exe' not in window_text_lower and 'file explorer' not in window_text_lower:
                     scrcpy_windows.append({
                         'title': window_text,
                         'owner': class_name,
